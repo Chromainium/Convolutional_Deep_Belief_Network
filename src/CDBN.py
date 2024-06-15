@@ -43,6 +43,8 @@ class CDBN(object):
     self.layer_name_to_object       =     {}
     self.layer_level_to_name        =     {}
     self.layer_name_to_level        =     {}
+    self.hidden_layer_names         =     []
+    self.global_layer_name          =     None
     self.input                      =     None
     self.fully_connected_layer      =     None
     self.locked                     =     False
@@ -73,6 +75,10 @@ class CDBN(object):
       v_height = 1
       v_width = 1
       v_channels = (previous_layer.hidden_width  / (previous_layer.prob_maxpooling + 1)) ** 2 * previous_layer.filter_number
+      # Add global layer dimensions if it exists
+      if layer_number == (len(self.hidden_layer_names)) and hasattr(self, 'global_layer_name') and self.global_layer_name:
+        global_layer = self.layer_name_to_object[self.global_layer_name]
+        v_channels += global_layer.filter_number
     return int(v_height), int(v_width), int(v_channels)
         
 
@@ -83,7 +89,7 @@ class CDBN(object):
                gaussian_unit = True, gaussian_variance = 0.2, 
                prob_maxpooling = False, padding = False, 
                learning_rate = 0.0001, learning_rate_decay = 0.5, momentum = 0.9, decay_step = 50000,  
-               weight_decay = 0.1, sparsity_target = 0.1, sparsity_coef = 0.1):
+               weight_decay = 0.1, sparsity_target = 0.1, sparsity_coef = 0.1, global_layer = False):
     """INTENT : Add a layer to the CDBN (on the top)
     ------------------------------------------------------------------------------------------------------------------------------------------
     PARAMETERS : (same as for CRBM)
@@ -109,6 +115,7 @@ class CDBN(object):
     weight_decay          :     coefficient of the weight l2 norm regularization
     sparsity_target       :     probability target of the activation of the hidden units
     sparsity_coef         :     coefficient of the sparsity regularization term
+    global_layer          :     True if the current layer is connected to the input (for skip connections)
     ------------------------------------------------------------------------------------------------------------------------------------------
     REMARK : Dynamically update CDBN global view of the model"""
     
@@ -120,8 +127,14 @@ class CDBN(object):
       if name in self.layer_name_to_object:
         raise ValueError('Trying to add layer ' + name + ' to CDBN ' + self.name + ' but this name is already use') 
       else:
-        self.layer_level_to_name[self.number_layer]  =  name   
-        self.layer_name_to_level[name]               =  self.number_layer
+        if global_layer:
+          self.global_layer_name = name
+          self.layer_level_to_name[None]  =  name   
+          self.layer_name_to_level[name]  =  None
+        else:
+          self.layer_level_to_name[self.number_layer]  =  name   
+          self.layer_name_to_level[name]               =  self.number_layer
+          self.hidden_layer_names.append(name)
 
         'layer auto calculation'
         if v_height == "auto" or v_width == "auto" or v_channels == "auto":
@@ -133,6 +146,8 @@ class CDBN(object):
           else:
             raise ValueError('You cant set "auto" on input layer')
 
+        if global_layer:
+          self.glob_input = (self.batch_size,v_height,v_width,v_channels)
         if self.input is None:
           self.input = (self.batch_size,v_height,v_width,v_channels)
         elif not fully_connected:
@@ -143,7 +158,7 @@ class CDBN(object):
             raise ValueError('Trying to add layer ' + name + ' to CDBN ' + self.name + ' which width of visible layer does not match width of output of previous layer') 
           if not (v_channels == ret_out.filter_number):
             raise ValueError('Trying to add layer ' + name + ' to CDBN ' + self.name + ' which number of channels of visible layer does not match number of channels of output of previous layer')  
-        if fully_connected and self.fully_connected_layer is None:
+        if fully_connected and self.fully_connected_layer is None and not global_layer:
           self.fully_connected_layer = self.number_layer
         self.layer_name_to_object[name] = crbm.CRBM(name, fully_connected, v_height, v_width, v_channels, f_height, f_width, f_number, 
                                                 init_biases_H, init_biases_V, init_weight_stddev, 
@@ -151,7 +166,11 @@ class CDBN(object):
                                                 prob_maxpooling, padding,
                                                 self.batch_size, learning_rate, learning_rate_decay, momentum, decay_step,  
                                                 weight_decay, sparsity_target, sparsity_coef)
-        self.number_layer = self.number_layer + 1
+        if not global_layer:
+          self.number_layer += 1
+          self.final_hidden_layer_name = name
+          self.final_hidden_layer_level = self.number_layer
+        
         'Where to save and restore parameter of this layer'
         tf.io.gfile.makedirs(self.path + "/" + name) 
         
@@ -180,6 +199,7 @@ class CDBN(object):
         print(message)  
           
     except ValueError as error:
+      print("Error in add_layer")
       self._print_error_message(error)
       
         
@@ -201,8 +221,15 @@ class CDBN(object):
         self.soft_step = 0
         self.softmax_layer  = True
         self.output_classes = output_classes
-        ret_out = self.layer_name_to_object[self.layer_level_to_name[self.number_layer-1]]
-        self.output = int(ret_out.hidden_height / (ret_out.prob_maxpooling + 1) * ret_out.hidden_width / (ret_out.prob_maxpooling + 1)  * ret_out.filter_number)
+        if hasattr(self, 'glob_input'):
+          ret_out = self.layer_name_to_object[self.layer_level_to_name[self.number_layer-1]]
+          glob_out = self.layer_name_to_object[self.layer_level_to_name[None]]
+          ret_output = int(ret_out.hidden_height / (ret_out.prob_maxpooling + 1) * ret_out.hidden_width / (ret_out.prob_maxpooling + 1)  * ret_out.filter_number)
+          glob_output = int(glob_out.hidden_height / (glob_out.prob_maxpooling + 1) * glob_out.hidden_width / (glob_out.prob_maxpooling + 1)  * glob_out.filter_number)
+          self.output = ret_output + glob_output
+        else:
+          ret_out = self.layer_name_to_object[self.layer_level_to_name[self.number_layer-1]]
+          self.output = int(ret_out.hidden_height / (ret_out.prob_maxpooling + 1) * ret_out.hidden_width / (ret_out.prob_maxpooling + 1)  * ret_out.filter_number)
         with tf.variable_scope('softmax_layer_cdbn'):
           with tf.device('/cpu:0'):
             self.W            = tf.get_variable('weights_softmax', (self.output, output_classes), initializer=tf.truncated_normal_initializer(stddev=1/self.output, dtype=tf.float32), dtype=tf.float32)
@@ -228,6 +255,7 @@ class CDBN(object):
           self.train_step = self.softmax_trainer.apply_gradients([(ret_w_0 , ret_w_1), ret_b])
           self.control =  tf.math.reduce_mean(tf.abs(tf.math.divide_no_nan(tf.multiply(ret_w_0,learning_rate),ret_w_1))) 
     except ValueError as error:
+      print("Error in add_softmax_layer")
       self._print_error_message(error)
       
         
@@ -257,17 +285,19 @@ class CDBN(object):
       
       
       
-  def manage_layers(self, layers_to_pretrain, layers_to_restore, step_for_pretraining, n_for_pretraining, step_softmax = 0, restore_softmax = False, fine_tune = False, threaded_input = False, learning_rate = 0.5):
+  def manage_layers(self, layers_to_pretrain, layers_to_restore, layers_to_transfer, step_for_pretraining, n_for_pretraining, step_softmax = 0, restore_softmax = False, transfer_softmax = False, fine_tune = False, threaded_input = False, learning_rate = 0.5):
     """INTENT : manage the initialization / restoration of the different layers of the CDBN
     ------------------------------------------------------------------------------------------------------------------------------------------
     PARAMETERS :
     layers_to_pretrain             :         layers to be initialized from scratch and pretrained (names list)
     layers_to_restore              :         layers to be restored (names list)
+    layers_to_transfer             :         layers to be restored (names list) to continue training
     step_for_pretraining           :         step of training for layers to be pretrained
     n_for_pretraining              :         length of the gibbs chain for pretraining
     step_softmax                   :         step for training softmax layer
     is_softmax                     :         is there a softmax layer
-    restore_softmax                :         should it be restored (True) or trained from scratch (False)""" 
+    restore_softmax                :         should it be restored (True) or trained from scratch (False)
+    transfer_softmax               :         this restores the softmax but continues training""" 
     
     try:
       if not self.locked:
@@ -284,7 +314,10 @@ class CDBN(object):
           
         for layer in layers_to_restore:
           self._init_layer(layer, from_scratch = False)
-          
+
+        for layer in layers_to_transfer:
+          self._init_layer(layer, from_scratch = False)
+
         if self.softmax_layer and not restore_softmax: 
           self.session.run(tf.initialize_variables([self.W, self.b]))
           if self.verbosity > 0:
@@ -296,19 +329,38 @@ class CDBN(object):
           if self.verbosity > 0:
             print('--------------------------')
           print('Successfully restored the layer ' + layer + ' of CDBN ' + self.name)
-            
+        
+        for layer in layers_to_transfer:
+          self._restore_layer(layer)
+          if self.verbosity > 0:
+            print('--------------------------')
+          print('Successfully restored the layer ' + layer + ' of CDBN ' + self.name + 'to continue training')
+
         for i in range(len(layers_to_pretrain)):
           self._pretrain_layer(layers_to_pretrain[i], step_for_pretraining[i], n_for_pretraining[i])
-          
+
+        for i in range(len(layers_to_transfer)):
+          self._pretrain_layer(layers_to_transfer[i], step_for_pretraining[i], n_for_pretraining[i])
+
         if self.softmax_layer and restore_softmax: 
           self._restore_layer('softmax_layer')
           if self.verbosity > 0:
             print('--------------------------')
           print('Successfully restored the softmax layer of CDBN ' + self.name)
+
+        if self.softmax_layer and transfer_softmax: 
+          self._restore_layer('softmax_layer')
+          if self.verbosity > 0:
+            print('--------------------------')
+          print('Successfully restored the softmax layer of CDBN ' + self.name + 'to continue training')
          
         if self.softmax_layer and not restore_softmax: 
           self._do_softmax_training(step_softmax, fine_tune, learning_rate)
-          
+        
+        if self.softmax_layer and transfer_softmax:
+          self._restore_layer('softmax_layer')
+          self._do_softmax_training(step_softmax, fine_tune, learning_rate)
+        
         for i in range(len(layers_to_pretrain)):
           self._save_layer(layers_to_pretrain[i], step_for_pretraining[i])
           if self.verbosity > 0:
@@ -322,6 +374,7 @@ class CDBN(object):
           print('Successfully saved the softmax layer of CDBN ' + self.name)
           
     except ValueError as error:
+      print("Error in manage_layers")
       self._print_error_message(error)
       
     
@@ -339,7 +392,7 @@ class CDBN(object):
     
     if f1:
       predicted_class = tf.argmax(y,1)
-      real_class = tf.argmax(y_,1)
+      real_class = tf.reshape(tf.argmax(y_,1), (self.batch_size,))
       zeros = tf.zeros_like(predicted_class)
       ones  = tf.ones_like(predicted_class)
       
@@ -352,7 +405,7 @@ class CDBN(object):
       false_negative = tf.math.reduce_sum(tf.cast(tf.logical_and(tf.equal(predicted_class, zeros),tf.equal(real_class, ones)), tf.float32))
       fn_count = 0
     else:
-      correct_prediction = tf.equal(tf.argmax(y,1), tf.argmax(y_,1))
+      correct_prediction = tf.equal(tf.argmax(y,1), tf.reshape(tf.argmax(y_,1), (self.batch_size,)))
       correct_count = tf.math.reduce_sum(tf.cast(correct_prediction, tf.float32))
       true_count = 0
 
@@ -421,8 +474,12 @@ class CDBN(object):
     print('Starting training the layer ' + rbm_layer_name + ' of CDBN ' + self.name)
     if self.verbosity > 0:
       print('--------------------------')
-    layer_input         = self.layer_name_to_object[self.layer_level_to_name[0]]
-    input_placeholder   = tf.placeholder(tf.float32, shape=self.input)
+    if self.layer_name_to_level[rbm_layer_name] == None:
+      input_placeholder   = tf.placeholder(tf.float32, shape=self.glob_input)
+      input_shape         = self.glob_input
+    else:
+      input_placeholder   = tf.placeholder(tf.float32, shape=self.input)
+      input_shape         = self.input
     step_placeholder    = tf.placeholder(tf.int32, shape=(1))
     input               = self._get_input_level(self.layer_name_to_level[rbm_layer_name], input_placeholder)
     a,b,c,error,control,_ = self._one_step_pretraining(rbm_layer_name, input , n, step_placeholder)
@@ -431,7 +488,7 @@ class CDBN(object):
       if self.verbosity > 0:
         start_time = time.time()
       input_images, _     = self.data.next_batch(self.batch_size, 'train')
-      visible             = np.reshape(input_images, self.input)
+      visible             = np.reshape(input_images, input_shape)
       _,_,_,err,con       = self.session.run([a,b,c,error,control], feed_dict={input_placeholder: visible, step_placeholder : np.array([i])})
       if self.verbosity > 0:
         average_cost    = average_cost + err
@@ -475,7 +532,7 @@ class CDBN(object):
       print('--------------------------')
     start = time.time()
 
-    if self.verbosity == 2:
+    if self.verbosity > 0:
       average_cost = 0
       average_control = 0
     for i in range(1,step):
@@ -488,7 +545,11 @@ class CDBN(object):
         _, a, b = self.session.run([self.train_step,self.cross_entropy_mean, self.control], feed_dict={self.input_placeholder: visible, self.y_: labels_feed})
         average_control += b
       average_cost += a
-      if self.verbosity > 0 and i % 250 == 0:
+      if self.verbosity == 2 and i % 250 == 0:
+        print('Step %d: cost is %.7f----- control value (gradient rate) : %.7f percent --- Estimated remaining time is %.0f sec' % (i, average_cost/250, average_control/250*100, (step-i)*(time.time() - start)/i))
+        average_cost = 0
+        average_control = 0
+      if self.verbosity == 1 and i % 500 == 0:
         print('Step %d: cost is %.7f----- control value (gradient rate) : %.7f percent --- Estimated remaining time is %.0f sec' % (i, average_cost/250, average_control/250*100, (step-i)*(time.time() - start)/i))
         average_cost = 0
         average_control = 0
@@ -560,7 +621,12 @@ class CDBN(object):
     input_data          :        input data for the visible layer of the bottom of the cdbn"""
 
     ret_data = input_data
-    if not layer_level == 0:
+    glob_data = input_data
+    if hasattr(self, 'glob_input'):
+      glob_data = tf.reshape(glob_data, self.glob_input)
+    if layer_level == None:
+      ret_data = glob_data 
+    if not layer_level == 0 and not layer_level == None:
       for i in range(layer_level):
         ret_layer = self.layer_name_to_object[self.layer_level_to_name[i]]
         if ret_layer.prob_maxpooling:
@@ -569,8 +635,11 @@ class CDBN(object):
           ret_data = ret_layer.infer_probability(ret_data, method='forward', result = 'hidden') 
         if self.fully_connected_layer == i + 1:
           ret_data = tf.reshape(ret_data, [self.batch_size, -1])
-          # ret_data = tf.reshape(ret_data, [self.batch_size, 1, 1, ret_data.get_shape()[1].value])
           ret_data = tf.reshape(ret_data, [self.batch_size, 1, 1, ret_data.get_shape()[1]])          
+    if hasattr(self, 'global_layer_name') and layer_level == self.final_hidden_layer_level and self.global_layer_name is not None:
+      ret_layer = self.layer_name_to_object[self.layer_level_to_name[None]]
+      glob_data = ret_layer.infer_probability(glob_data, method='forward', result = 'hidden')
+      ret_data  = tf.concat([ret_data, glob_data], axis=-1)
     return ret_data
       
         
