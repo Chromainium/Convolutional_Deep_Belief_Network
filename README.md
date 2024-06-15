@@ -34,8 +34,10 @@ This file is a jupyter notebook containing a full working example of CDBN used o
   - Then the CDBN is tested against a convolutional neural network to assess and compare robustness to noise injection and semi-supervised learning.
 
 ## Improvements and modifications
-My addition to the project involves adding the ability to place a global layer (or skip connection) which runs parallel to the other hidden layers of the network. The global layer is fully connected and takes input directly from the images and feeds its output to the layer before the final softmax layer. Similar to the architecture found in [this unpublished manuscript](https://www.cs.toronto.edu/~kriz/conv-cifar10-aug2010.pdf) by Alex Krizhevsky.
+My addition to the project involves:
+-   adding the ability to place a global layer (or skip connection) which runs parallel to the other hidden layers of the network. The global layer is fully connected and takes input directly from the images and feeds its output to the layer before the final softmax layer. Similar to the architecture found in [this unpublished manuscript](https://www.cs.toronto.edu/~kriz/conv-cifar10-aug2010.pdf) by Alex Krizhevsky.
 ![image(1)](https://github.com/Chromainium/Convolutional_Deep_Belief_Network/assets/126778895/4482ab0d-1720-47ce-8b9b-98af12c2391e)
+-   adding the ability to restore layers and then continue with training. The original project by arthurmeyer only allowed for either restoring layers, where the weights of the restored layers remained fixed, or pretraining layers from scratch
 
 The following are the improvements added by SimoDR to the arthurmeyer project.
 The [original project](https://github.com/arthurmeyer/Convolutional_Deep_Belief_Network) from was built on `tensorflow 0.12` and `python 3`. I brought it up to date with `python 3.7` and `tensorflow 2.7.0`. I birefly summarize the most relevant modifications I made:
