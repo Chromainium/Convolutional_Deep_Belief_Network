@@ -6,7 +6,7 @@ This code contains how to create a convolutional DBN from stacked convolutional 
 A convolutional deep belief network (CDBN) is a deep network which consists in a stack of convolutional restricted boltzmann machine (CRBM). 
 Because the gradient of the network is intractable, a greedy layer-wise training procedure is used. 
 More details can be found [here](https://www.cs.princeton.edu/~rajeshr/papers/icml09-ConvolutionalDeepBeliefNetworks.pdf) and [here](https://papers.nips.cc/paper/3048-greedy-layer-wise-training-of-deep-networks.pdf) and [here](https://www.cs.toronto.edu/~hinton/science.pdf).
-This project contains 4 files, `CDBN.py`, `CRBM.py`, `DATA_HANDLER.py` (in scr folder) and `cdbn_cifar10.ipynb`.
+This project contains 4 files, `CDBN.py`, `CRBM.py`, `DATA_HANDLER.py` (in scr folder) and `CIFAR_TensorFlow_chromain_withgloballayer.ipynb`.
 Below is a description of each file, what it does and how to use it.
 
 
@@ -26,10 +26,10 @@ This file is the class that represent the whole network and can be composed of s
 3. `DATA_HANDLER.py`
 This file contains a class that is used to prepare data for a correct loading in the model.
 
-4. `cdbn_chifar10.ipynb`
+4. `CIFAR_TensorFlow_chromain_withgloballayer.ipynb`
 This file is a jupyter notebook containing a full working example of CDBN used on the CIFAR-10 dataset. 
-  - The notebook performs training and prediction on the CIFAR-10 dataset. Hyperparameters have been tuned to give a decent accuracy score;
-  - It goes further by exploring the internal representation of the model, to see how the weights have been tuned for the classification task. For each layer of the CRBN the filters are visualized and interpreted. Activations on input images are visualized to see how filters highligts different features of the digits/letters;
+  - The notebook performs training and prediction on the CIFAR-10 dataset. The model was pretrained on two different datasets; STL-10 and a 300k random subset of ImageNet. Hyperparameters have been tuned to give a decent accuracy score;
+  - It further explors the internal representation of the model, to see how the weights have been tuned for the classification task. For each layer of the CRBM the filters are visualized and interpreted. Activations on input images are visualized to see how filters highligths different features;
   - It is then showed how the model effectively builds a hierarchical representation that can be extracted with the hierarchical clustering algorithm and visualized with a dendogram;
   - Then the CDBN is tested against a convolutional neural network to assess and compare robustness to noise injection and semi-supervised learning.
 
@@ -37,7 +37,7 @@ This file is a jupyter notebook containing a full working example of CDBN used o
 My addition to the project involves:
 -   adding the ability to place a global layer (or skip connection) which runs parallel to the other hidden layers of the network. The global layer is fully connected and takes input directly from the images and feeds its output to the layer before the final softmax layer. Similar to the architecture found in [this unpublished manuscript](https://www.cs.toronto.edu/~kriz/conv-cifar10-aug2010.pdf) by Alex Krizhevsky.
 ![image(1)](https://github.com/Chromainium/Convolutional_Deep_Belief_Network/assets/126778895/4482ab0d-1720-47ce-8b9b-98af12c2391e)
--   adding the ability to restore layers and then continue with training. The original project by arthurmeyer only allowed for either restoring layers, where the weights of the restored layers remained fixed, or pretraining layers from scratch
+-   adding the ability to restore layers and then continue with training. The original project by arthurmeyer only allowed for either restoring layers, where the weights of the restored layers remained fixed, or pretraining layers from scratch. By being able to retore layers and then continue training it allows for more data to be added and the ability to pick up training where you left off.
 
 The following are the improvements added by SimoDR to the arthurmeyer project.
 The [original project](https://github.com/arthurmeyer/Convolutional_Deep_Belief_Network) from was built on `tensorflow 0.12` and `python 3`. I brought it up to date with `python 3.7` and `tensorflow 2.7.0`. I birefly summarize the most relevant modifications I made:
